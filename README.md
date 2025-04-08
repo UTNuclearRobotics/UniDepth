@@ -11,10 +11,10 @@
 
 ![](assets/docs/unidepthv2-banner.png)
 
-> [**UniDepthV2: Universal Monocular Metric Depth Estimation Made Simpler**](https://arxiv.org/abs/2502.20110),  
+> [**UniDepthV2: Universal Monocular Metric Depth Estimation Made Simpler**](https://arxiv.org/abs/2403.18913),  
 > Luigi Piccinelli, Christos Sakaridis, Yung-Hsu Yang, Mattia Segu, Siyuan Li, Wim Abbeloos, Luc Van Gool,  
 > under submission,  
-> *Paper at [arXiv 2502.20110](https://arxiv.org/abs/2502.20110.pdf)*  
+> *Paper at [arXiv 2502.20110](https://arxiv.org/abs/2502.20110)*  
 
 
 # UniDepth: Universal Monocular Metric Depth Estimation
@@ -60,7 +60,7 @@
 Requirements are not in principle hard requirements, but there might be some differences (not tested):
 - Linux
 - Python 3.10+ 
-- CUDA 11.8+
+- CUDA 11.8
 
 Install the environment needed to run UniDepth with:
 ```shell
@@ -70,15 +70,12 @@ export NAME=Unidepth
 python -m venv $VENV_DIR/$NAME
 source $VENV_DIR/$NAME/bin/activate
 
-# Install UniDepth and dependencies, cuda >11.8 work fine, too.
+# Install UniDepth and dependencies
 pip install -e . --extra-index-url https://download.pytorch.org/whl/cu118
 
 # Install Pillow-SIMD (Optional)
 pip uninstall pillow
 CC="cc -mavx2" pip install -U --force-reinstall pillow-simd
-
-# Install KNN (for evaluation only)
-cd unidepth/ops/knn;bash compile.sh;cd ../../../
 ```
 
 If you use conda, you should change the following: 
@@ -144,6 +141,8 @@ intrinsics_path = "assets/demo/intrinsics.npy"
 # Load the intrinsics if available
 intrinsics = torch.from_numpy(np.load(intrinsics_path)) # 3 x 3
 
+predictions = model.infer(rgb, intrinsics)
+
 # For V2, we defined camera classes. If you pass a 3x3 tensor (as above)
 # it will convert to Pinhole, but you can pass classes from camera.py.
 # The `Camera` class is meant as an abstract, use only child classes as e.g.:
@@ -186,7 +185,16 @@ The available models are the following:
         <td>ViT-L</td>
         <td><a href="https://huggingface.co/lpiccinelli/unidepth-v1-vitl14">unidepth-v1-vitl14</a></td>
     </tr>
-    <hr style="border: 2px solid black;">
+    <tr>
+        <td rowspan="2"><b>UnidepthV2old</b></td>
+        <td>ViT-S</td>
+        <td><a href="https://huggingface.co/lpiccinelli/unidepth-v2old-vits14">unidepth-v2old-vits14</a></td>
+    </tr>
+    <tr>
+        <td>ViT-L</td>
+        <td><a href="https://huggingface.co/lpiccinelli/unidepth-v2old-vitl14">unidepth-v2old-vitl14</a></td>
+    </tr>
+    <hr style="border: 2px solid black;"><hr>
     <tr>
         <td rowspan="3"><b>UnidepthV2</b></td>
         <td>ViT-S</td>
@@ -206,7 +214,7 @@ Please visit [Hugging Face](https://huggingface.co/lpiccinelli) or click on the 
 You can load UniDepth as the following, with `name` variable matching the table above:
 
 ```python
-from unidepth.models import UniDepthV1, UniDepthV2
+from unidepth.models import UniDepthV1, UniDepthV2, UnidepthV2old
 
 model_v1 = UniDepthV1.from_pretrained(f"lpiccinelli/{name}")
 model_v2 = UniDepthV2.from_pretrained(f"lpiccinelli/{name}")
@@ -236,6 +244,7 @@ To summarize the main differences are:
 - New cameras support (see `camera.py`).
 
 UnidepthV2old is actually V1 version updated to compensate for wave artifacts due to wrong LiDAR accumulation.
+
 
 ## Training
 

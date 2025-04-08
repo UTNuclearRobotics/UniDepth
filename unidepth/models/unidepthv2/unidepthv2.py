@@ -4,9 +4,9 @@ Licensed under the CC-BY NC 4.0 license (http://creativecommons.org/licenses/by-
 """
 
 import importlib
+import warnings
 from copy import deepcopy
 from math import ceil
-import warnings
 
 import torch
 import torch.nn as nn
@@ -22,8 +22,9 @@ from unidepth.utils.constants import (IMAGENET_DATASET_MEAN,
 from unidepth.utils.distributed import is_main_process
 from unidepth.utils.misc import (first_stack, get_params, last_stack, match_gt,
                                  match_intrinsics, max_stack, mean_stack,
-                                 softmax_stack)
+                                 profile_method, softmax_stack)
 
+VERBOSE = False
 STACKING_FNS = {
     "max": max_stack,
     "mean": mean_stack,
@@ -126,11 +127,13 @@ class UniDepthV2(
         self.build(config)
         self.build_losses(config)
 
+    @profile_method(verbose=VERBOSE)
     def forward_train(self, inputs, image_metas):
         inputs, outputs = self.encode_decode(inputs, image_metas)
         losses = self.compute_losses(outputs, inputs, image_metas)
         return outputs, losses
 
+    @profile_method(verbose=VERBOSE)
     def forward_test(self, inputs, image_metas):
         inputs, outputs = self.encode_decode(inputs, image_metas)
         depth_gt = inputs["depth"]
@@ -221,13 +224,17 @@ class UniDepthV2(
 
         # remaining losses, we expect no more losses to be computed
         loss = self.losses["confidence"]
-        conf_losses = loss(
+        target_c = (
+            outputs["depth"].clip(min=1e-4).detach().log()
+            - inputs["depth"].clip(min=1e-4).log()
+        )
+        camera_losses = loss(
             outputs["confidence"].log(),
             target_gt=inputs["depth"],
-            target_pred=outputs["depth"],
+            taret_pred=outputs["depth"],
             mask=inputs["depth_mask"].clone(),
         )
-        losses["opt"][loss.name + "_conf"] = loss.weight * conf_losses.mean()
+        losses["opt"][loss.name + "_conf"] = loss.weight * camera_losses.mean()
         losses_to_be_computed.remove("confidence")
 
         assert (
@@ -272,11 +279,9 @@ class UniDepthV2(
                 camera = Pinhole(K=camera)
             camera = BatchCamera.from_camera(camera)
             camera = camera.to(self.device)
-        B, _, H, W = rgb.shape
 
+        B, _, H, W = rgb.shape
         rgb = rgb.to(self.device)
-        if camera is not None:
-            camera = camera.to(self.device)
 
         # preprocess
         paddings, (padded_H, padded_W) = get_paddings((H, W), ratio_bounds)
@@ -338,6 +343,7 @@ class UniDepthV2(
         out["depth_features"] = model_outputs["depth_features"]
         return out
 
+    @profile_method(verbose=VERBOSE)
     def encode_decode(self, inputs, image_metas=[]):
         B, _, H, W = inputs["image"].shape
 
@@ -359,7 +365,9 @@ class UniDepthV2(
                 inputs["depth_paddings"] = inputs["depth_paddings"] + inputs["paddings"]
 
         if inputs.get("camera", None) is not None:
-            inputs["rays"] = inputs["camera"].get_rays(shapes=(B, H, W))
+            inputs["rays"] = rearrange(
+                inputs["camera"].get_rays(shapes=(B, H, W)), "b c h w -> b (h w) c"
+            )
 
         features, tokens = self.pixel_encoder(inputs["image"])
         inputs["features"] = [
@@ -376,6 +384,8 @@ class UniDepthV2(
         pts_3d = outputs["rays"] * outputs["radius"]
         outputs.update({"points": pts_3d, "depth": pts_3d[:, -1:]})
 
+        if "rays" in inputs:
+            inputs["rays"] = rearrange(inputs["rays"], "b (h w) c -> b c h w", h=H, w=W)
         return inputs, outputs
 
     def load_pretrained(self, model_file):
@@ -385,7 +395,9 @@ class UniDepthV2(
         dict_model = torch.load(model_file, map_location=device, weights_only=False)
         if "model" in dict_model:
             dict_model = dict_model["model"]
-        dict_model = {k.replace("module.", ""): v for k, v in dict_model.items()}
+        dict_model = deepcopy(
+            {k.replace("module.", ""): v for k, v in dict_model.items()}
+        )
         info = self.load_state_dict(dict_model, strict=False)
         if is_main_process():
             print(

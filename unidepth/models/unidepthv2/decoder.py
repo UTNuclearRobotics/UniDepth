@@ -15,6 +15,8 @@ from unidepth.utils.coordinate import coords_grid
 from unidepth.utils.geometric import flat_interpolate
 from unidepth.utils.positional_embedding import generate_fourier_features
 
+VERBOSE = False
+
 
 def orthonormal_init(num_tokens, dims):
 
@@ -389,17 +391,18 @@ class Decoder(nn.Module):
         rays_pred = rays_pred / torch.norm(rays_pred, dim=1, keepdim=True).clamp(
             min=1e-5
         )
+        rays_pred = rearrange(rays_pred, "b c h w -> b (h w) c")
 
-        ### LEGACY CODE FOR TRAINING
-        # if self.training and rays_gt is not None:  
-        #     prob = -1.0  # 0.8 * (1 - tanh(self.steps / 100000)) + 0.2
-        #     where_use_gt_rays = torch.rand(B, 1, 1, device=device, dtype=dtype) < prob
-        #     where_use_gt_rays = where_use_gt_rays.int()
-        #     rays = rays_gt * where_use_gt_rays + rays_pred * (1 - where_use_gt_rays)
+        if self.training and rays_gt is not None:  # legacy
+            prob = -1.0  # 0.8 * (1 - tanh(self.steps / 100000)) + 0.2
+            where_use_gt_rays = torch.rand(B, 1, 1, device=device, dtype=dtype) < prob
+            where_use_gt_rays = where_use_gt_rays.int()
+            rays = rays_gt * where_use_gt_rays + rays_pred * (1 - where_use_gt_rays)
+        elif rays_gt is not None:
+            rays = rays_gt
+        else:
+            rays = rays_pred
 
-        rays = rays_pred if rays_gt is None else rays_gt
-        rays = rearrange(rays, "b c h w -> b (h w) c")
-        
         return intrinsics_matrix, rays
 
     def forward(

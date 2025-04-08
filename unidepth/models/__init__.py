@@ -3,6 +3,6 @@ from .unidepthv2 import UniDepthV2, UniDepthV2old
 
 __all__ = [
     "UniDepthV1",
-    "UniDepthV2old",
     "UniDepthV2",
+    "UniDepthV2old",
 ]

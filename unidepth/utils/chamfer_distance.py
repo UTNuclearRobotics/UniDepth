@@ -4,13 +4,16 @@ from typing import Union
 import torch
 
 try:
-    from unidepth.ops.knn import knn_points
+    from pytorch3d.ops.knn import knn_points
 except ImportError as e:
     warnings.warn(
-        "!! To run evaluation you need KNN. Please compile KNN: "
-        "`cd unidepth/ops/knn with && bash compile.sh`."
+        "Pytorch3D is not available. "
+        "Using unidepth.ops.knn. "
+        "Either install Pytorch3D or compile knn: "
+        "`cd unidepth/ops/knn with && bash compile.sh`"
+        "If you already build it, ignore this warning."
     )
-    knn_points = lambda x : x
+    from unidepth.ops.knn import knn_points
 
 
 def _validate_chamfer_reduction_inputs(

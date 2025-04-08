@@ -55,7 +55,7 @@
             "min_samples": 6
         },
         "confidence": {
-            "name": "Confidence",
+            "name": "Regression",
             "weight": 0.1,
             "gamma": 1.0,
             "alpha": 1.0,

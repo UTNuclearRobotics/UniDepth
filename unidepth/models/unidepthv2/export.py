@@ -22,7 +22,7 @@ class UniDepthV2ONNX(UniDepthV2):
         eps: float = 1e-6,
         **kwargs,
     ):
-        super().__init__(config, eps)
+        super(UniDepthV2ONNX, self).__init__(config, eps)
 
     def forward(self, rgbs):
         B, _, H, W = rgbs.shape
@@ -45,47 +45,11 @@ class UniDepthV2ONNX(UniDepthV2):
         return pts_3d, outputs["confidence"], outputs["intrinsics"]
 
 
-class UniDepthV2ONNXcam(UniDepthV2):
-    def __init__(
-        self,
-        config,
-        eps: float = 1e-6,
-        **kwargs,
-    ):
-        super().__init__(config, eps)
-
-    def forward(self, rgbs, rays):
-        B, _, H, W = rgbs.shape
-        features, tokens = self.pixel_encoder(rgbs)
-
-        inputs = {}
-        inputs["image"] = rgbs
-        inputs["rays"] = rays
-        inputs["features"] = [
-            self.stacking_fn(features[i:j]).contiguous()
-            for i, j in self.slices_encoder_range
-        ]
-        inputs["tokens"] = [
-            self.stacking_fn(tokens[i:j]).contiguous()
-            for i, j in self.slices_encoder_range
-        ]
-        outputs = self.pixel_decoder(inputs, [])
-        outputs["rays"] = outputs["rays"].permute(0, 2, 1).reshape(B, 3, H, W)
-        pts_3d = outputs["rays"] * outputs["radius"]
-
-        return pts_3d, outputs["confidence"], outputs["intrinsics"]
-
-
-
-def export(model, path, shape=(462, 630), with_camera=False):
+def export(model, path, shape=(462, 630)):
     model.eval()
     image = torch.rand(1, 3, *shape)
     dynamic_axes_in = {"rgbs": {0: "batch"}}
     inputs = [image]
-    if with_camera:
-        rays = torch.rand(1, 3, *shape)
-        inputs.append(rays)
-        dynamic_axes_in["rays"] = {0: "batch"}
 
     dynamic_axes_out = {
         "pts_3d": {0: "batch"},
@@ -112,8 +76,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--backbone",
         type=str,
-        default="vitl",
-        choices=["vits", "vitb", "vitl"],
+        default="vitl14",
+        choices=["vits14", "vitl14"],
         help="Backbone model",
     )
     parser.add_argument(
@@ -129,7 +93,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--with-camera",
         action="store_true",
-        help="Export model that expects GT camera as unprojected rays at inference",
+        help="Export model that expects GT camera matrix at inference",
     )
     args = parser.parse_args()
 
@@ -146,15 +110,15 @@ if __name__ == "__main__":
         shape = shape_rounded
 
     # assumes command is from root of repo
-    with open(os.path.join("configs", f"config_{version}_{backbone}14.json")) as f:
+    with open(os.path.join("configs", f"config_{version}_{backbone}.json")) as f:
         config = json.load(f)
 
     # tell DINO not to use efficient attention: not exportable
     config["training"]["export"] = True
 
-    model = UniDepthV2ONNX(config) if not with_camera else UniDepthV2ONNXcam(config)
+    model = UniDepthV2ONNX(config)
     path = huggingface_hub.hf_hub_download(
-        repo_id=f"lpiccinelli/unidepth-{version}-{backbone}14",
+        repo_id=f"lpiccinelli/unidepth-{version}-{backbone}",
         filename=f"pytorch_model.bin",
         repo_type="model",
     )
@@ -167,6 +131,4 @@ if __name__ == "__main__":
         model=model,
         path=os.path.join(os.environ.get("TMPDIR", "."), output_path),
         shape=shape,
-        with_camera=with_camera,
     )
-
